@@ -114,9 +114,9 @@ const matchesRevokeCapabilityFilter = (
 const revokeCapabilityFilterLabel = (filter: RevokeCapabilityFilter): string => {
   switch (filter) {
     case 'READY':
-      return 'Showing credentials where Provider Revoke is currently actionable.';
+      return 'Showing credentials where OAuth revoke/local-clear is currently actionable.';
     case 'BLOCKED':
-      return 'Showing credentials where Provider Revoke is blocked by backend capability metadata.';
+      return 'Showing credentials where OAuth revoke/local-clear is blocked by backend capability metadata.';
     case 'CUSTOM_ENDPOINT_GAP':
       return 'Showing CUSTOM credentials where provider-side revoke is blocked by a missing revoke endpoint.';
     case 'ENV_MANAGED_ONLY':
@@ -130,9 +130,9 @@ const revokeCapabilityFilterLabel = (filter: RevokeCapabilityFilter): string => 
 const revokeCapabilityFilterChipLabel = (filter: RevokeCapabilityFilter): string => {
   switch (filter) {
     case 'READY':
-      return 'Provider revoke ready';
+      return 'Revoke action ready';
     case 'BLOCKED':
-      return 'Provider revoke blocked';
+      return 'Revoke action blocked';
     case 'CUSTOM_ENDPOINT_GAP':
       return 'CUSTOM revoke gaps';
     case 'ENV_MANAGED_ONLY':
@@ -162,6 +162,25 @@ const statusChip = (label: string, active: boolean) => (
     size="small"
   />
 );
+
+const isLocalClearRevoke = (credential: OAuthCredentialInventoryItem): boolean => (
+  credential.providerRevokeMode === 'LOCAL_CLEAR'
+);
+
+const revokeActionLabel = (credential: OAuthCredentialInventoryItem): string => (
+  isLocalClearRevoke(credential) ? 'Local Clear' : 'Provider Revoke'
+);
+
+const revokeActionTooltip = (credential: OAuthCredentialInventoryItem): string => {
+  if (!credential.providerRevokeSupported) {
+    return credential.providerRevokeUnsupportedReason
+      ?? 'OAuth revoke/local-clear is not supported for this credential.';
+  }
+  if (isLocalClearRevoke(credential)) {
+    return 'Clears Athena-local Microsoft OAuth tokens only. Entra sessions remain until expiry or a separate Graph revokeSignInSessions action.';
+  }
+  return '';
+};
 
 const resolveErrorMessage = (err: unknown, fallback: string): string => {
   const responseMessage = (err as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
@@ -359,9 +378,9 @@ const OAuthCredentialAdminPage: React.FC = () => {
   const emptyInventoryMessage = (() => {
     switch (revokeCapabilityFilter) {
       case 'READY':
-        return 'No OAuth credentials are currently ready for Provider Revoke.';
+        return 'No OAuth credentials are currently ready for revoke/local-clear action.';
       case 'BLOCKED':
-        return 'No OAuth credentials are currently blocked from Provider Revoke.';
+        return 'No OAuth credentials are currently blocked from revoke/local-clear action.';
       case 'CUSTOM_ENDPOINT_GAP':
         return 'No CUSTOM credentials currently need a revoke endpoint.';
       case 'ENV_MANAGED_ONLY':
@@ -417,8 +436,9 @@ const OAuthCredentialAdminPage: React.FC = () => {
   };
 
   const handleRevoke = async (credential: OAuthCredentialInventoryItem) => {
-    const confirmed = window.confirm(
-      `Revoke OAuth token at the provider for ${credential.ownerType} ${credential.ownerId}? This contacts Google to invalidate the token. The owner must reconnect afterwards. This is different from Require Reauth, which only clears Athena's local copy.`
+    const confirmed = window.confirm(isLocalClearRevoke(credential)
+      ? `Clear Athena-local Microsoft OAuth tokens for ${credential.ownerType} ${credential.ownerId}? Athena will stop using this credential immediately. This does not revoke the user's Entra sign-in sessions; those remain until expiry or a separate Microsoft Graph revokeSignInSessions action.`
+      : `Revoke OAuth token at the provider for ${credential.ownerType} ${credential.ownerId}? This contacts the provider to invalidate the token. The owner must reconnect afterwards. This is different from Require Reauth, which only clears Athena's local copy.`
     );
     if (!confirmed) {
       return;
@@ -429,7 +449,10 @@ const OAuthCredentialAdminPage: React.FC = () => {
       const updated = await oauthCredentialAdminService.revoke(credential.id);
       setCredentials((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (err) {
-      setError(resolveErrorMessage(err, 'Failed to revoke OAuth token at the provider.'));
+      setError(resolveErrorMessage(err, isLocalClearRevoke(credential)
+        ? 'Failed to clear local Microsoft OAuth tokens.'
+        : 'Failed to revoke OAuth token at the provider.'
+      ));
       await loadCredentials(ownerType, provider, { preserveError: true });
     } finally {
       setRevokeCredentialId(null);
@@ -606,7 +629,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
               aria-pressed={revokeCapabilityFilter === 'READY'}
               sx={{ minWidth: 210 }}
             >
-              Provider revoke ready ({providerRevokeReadyCount})
+              Revoke action ready ({providerRevokeReadyCount})
             </Button>
             <Button
               variant={revokeCapabilityFilter === 'BLOCKED' ? 'contained' : 'outlined'}
@@ -615,7 +638,7 @@ const OAuthCredentialAdminPage: React.FC = () => {
               aria-pressed={revokeCapabilityFilter === 'BLOCKED'}
               sx={{ minWidth: 220 }}
             >
-              Provider revoke blocked ({providerRevokeBlockedCount})
+              Revoke action blocked ({providerRevokeBlockedCount})
             </Button>
             <Button
               variant={revokeCapabilityFilter === 'CUSTOM_ENDPOINT_GAP' ? 'contained' : 'outlined'}
@@ -781,19 +804,14 @@ const OAuthCredentialAdminPage: React.FC = () => {
                             </Button>
                           )}
                           <Tooltip
-                            title={
-                              !credential.providerRevokeSupported
-                                ? (credential.providerRevokeUnsupportedReason
-                                  ?? 'Provider-side revoke is not supported for this credential.')
-                                : ''
-                            }
+                            title={revokeActionTooltip(credential)}
                           >
                             <span
                               data-testid={`provider-revoke-wrapper-${credential.id}`}
                               aria-label={
                                 !credential.providerRevokeSupported
                                   ? (credential.providerRevokeUnsupportedReason
-                                    ?? 'Provider-side revoke is not supported for this credential.')
+                                    ?? 'OAuth revoke/local-clear is not supported for this credential.')
                                   : undefined
                               }
                             >
@@ -809,7 +827,9 @@ const OAuthCredentialAdminPage: React.FC = () => {
                                   || !credential.providerRevokeSupported
                                 }
                               >
-                                {revokeCredentialId === credential.id ? 'Revoking...' : 'Provider Revoke'}
+                                {revokeCredentialId === credential.id
+                                  ? (isLocalClearRevoke(credential) ? 'Clearing...' : 'Revoking...')
+                                  : revokeActionLabel(credential)}
                               </Button>
                             </span>
                           </Tooltip>

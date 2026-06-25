@@ -60,7 +60,7 @@ class OAuthCredentialAdminServiceTest {
     @Test
     @DisplayName("listCredentials enriches every row with provider-revoke capability metadata")
     void listCredentialsEnrichesEveryRowWithCapability() {
-        // Two rows: a GOOGLE row with stored tokens (supported) and a non-GOOGLE row (unsupported).
+        // Two rows: a GOOGLE row with provider revoke and a MICROSOFT row with local-clear.
         // The repository projection always returns capability-default (false, null), so the service
         // must re-derive both fields per row before returning to the controller.
         UUID googleId = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -74,9 +74,10 @@ class OAuthCredentialAdminServiceTest {
         assertEquals(2, result.size());
         assertTrue(result.get(0).providerRevokeSupported());
         assertNull(result.get(0).providerRevokeUnsupportedReason());
-        assertFalse(result.get(1).providerRevokeSupported());
-        assertNotNull(result.get(1).providerRevokeUnsupportedReason());
-        assertTrue(result.get(1).providerRevokeUnsupportedReason().contains("MICROSOFT"));
+        assertEquals(OAuthRevokeCapabilityMode.PROVIDER_REVOKE, result.get(0).providerRevokeMode());
+        assertTrue(result.get(1).providerRevokeSupported());
+        assertNull(result.get(1).providerRevokeUnsupportedReason());
+        assertEquals(OAuthRevokeCapabilityMode.LOCAL_CLEAR, result.get(1).providerRevokeMode());
     }
 
     @Test
@@ -93,6 +94,7 @@ class OAuthCredentialAdminServiceTest {
         assertEquals(1, result.size());
         assertTrue(result.get(0).providerRevokeSupported());
         assertNull(result.get(0).providerRevokeUnsupportedReason());
+        assertEquals(OAuthRevokeCapabilityMode.PROVIDER_REVOKE, result.get(0).providerRevokeMode());
     }
 
     @Test
@@ -104,6 +106,7 @@ class OAuthCredentialAdminServiceTest {
 
         assertTrue(enriched.providerRevokeSupported());
         assertNull(enriched.providerRevokeUnsupportedReason());
+        assertEquals(OAuthRevokeCapabilityMode.PROVIDER_REVOKE, enriched.providerRevokeMode());
     }
 
     @Test
@@ -115,6 +118,7 @@ class OAuthCredentialAdminServiceTest {
 
         assertTrue(enriched.providerRevokeSupported());
         assertNull(enriched.providerRevokeUnsupportedReason());
+        assertEquals(OAuthRevokeCapabilityMode.PROVIDER_REVOKE, enriched.providerRevokeMode());
     }
 
     @Test
@@ -132,6 +136,7 @@ class OAuthCredentialAdminServiceTest {
                 + "this credential row only references env-managed secrets",
             enriched.providerRevokeUnsupportedReason()
         );
+        assertEquals(OAuthRevokeCapabilityMode.UNSUPPORTED, enriched.providerRevokeMode());
     }
 
     @Test
@@ -143,20 +148,19 @@ class OAuthCredentialAdminServiceTest {
 
         assertFalse(enriched.providerRevokeSupported());
         assertEquals("No locally stored OAuth token to revoke", enriched.providerRevokeUnsupportedReason());
+        assertEquals(OAuthRevokeCapabilityMode.UNSUPPORTED, enriched.providerRevokeMode());
     }
 
     @Test
-    @DisplayName("withCapability: MICROSOFT is unsupported with provider-name reason")
-    void withCapabilityMicrosoftIsUnsupported() {
+    @DisplayName("withCapability: MICROSOFT with stored token is local-clear")
+    void withCapabilityMicrosoftWithStoredTokenIsLocalClear() {
         OAuthCredentialInventoryItem item = inventory(UUID.randomUUID(), OAuthProviderType.MICROSOFT, true, true, true);
 
         OAuthCredentialInventoryItem enriched = OAuthCredentialAdminService.withCapability(item);
 
-        assertFalse(enriched.providerRevokeSupported());
-        assertEquals(
-            "Provider-side revoke is not yet supported for MICROSOFT",
-            enriched.providerRevokeUnsupportedReason()
-        );
+        assertTrue(enriched.providerRevokeSupported());
+        assertNull(enriched.providerRevokeUnsupportedReason());
+        assertEquals(OAuthRevokeCapabilityMode.LOCAL_CLEAR, enriched.providerRevokeMode());
     }
 
     @Test
@@ -171,6 +175,7 @@ class OAuthCredentialAdminServiceTest {
             "Provider-side revoke endpoint is not configured for this CUSTOM credential",
             enriched.providerRevokeUnsupportedReason()
         );
+        assertEquals(OAuthRevokeCapabilityMode.UNSUPPORTED, enriched.providerRevokeMode());
     }
 
     @Test
@@ -184,9 +189,10 @@ class OAuthCredentialAdminServiceTest {
 
         assertFalse(enriched.providerRevokeSupported());
         assertEquals(
-            "Provider-side revoke is only supported for GOOGLE or CUSTOM; this credential is null",
+            "OAuth revoke is only supported for GOOGLE, MICROSOFT, or CUSTOM; this credential is null",
             enriched.providerRevokeUnsupportedReason()
         );
+        assertEquals(OAuthRevokeCapabilityMode.UNSUPPORTED, enriched.providerRevokeMode());
     }
 
     @Test

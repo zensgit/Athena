@@ -33,6 +33,7 @@ const credential: OAuthCredentialInventoryItem = {
   updatedAt: '2026-05-06T10:00:00Z',
   providerRevokeSupported: true,
   providerRevokeUnsupportedReason: null,
+  providerRevokeMode: 'PROVIDER_REVOKE',
 };
 
 describe('oauthCredentialAdminService', () => {
@@ -72,6 +73,16 @@ describe('oauthCredentialAdminService', () => {
         providerRevokeSupported: 'yes',
       },
     ]);
+
+    await expect(oauthCredentialAdminService.listCredentials()).rejects.toThrow(
+      OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE
+    );
+  });
+
+  test('rejects list items missing explicit revoke capability mode', async () => {
+    const withoutMode: Partial<OAuthCredentialInventoryItem> = { ...credential };
+    delete withoutMode.providerRevokeMode;
+    mockedApi.get.mockResolvedValueOnce([withoutMode]);
 
     await expect(oauthCredentialAdminService.listCredentials()).rejects.toThrow(
       OAUTH_CREDENTIAL_ADMIN_UNEXPECTED_RESPONSE_MESSAGE

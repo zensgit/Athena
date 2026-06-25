@@ -1,7 +1,8 @@
 # Microsoft OAuth Revoke — Day-1 Taskbook / Gap Audit
 
 - Date: 2026-06-25
-- Status: Day-1 **read-only gap audit + taskbook; RATIFIED for Day-2 build.**
+- Status: Day-1 **read-only gap audit + taskbook; RATIFIED for Day-2 build.** Day-2 implementation updates these
+  pre-build facts to the §3(A) LOCAL-CLEAR semantics.
 - Scope: Athena OAuth credential **revoke** for the `MICROSOFT` provider.
 - Ratified decision: **§3(A) LOCAL-CLEAR revoke**.
 
@@ -17,7 +18,7 @@ cached session so Athena immediately stops using that credential. It must not ca
 (none exists for per-token revoke), must not invoke Microsoft Graph `revokeSignInSessions`, and must label the action
 honestly as **local token clear, not Entra-side session revocation**.
 
-## 1. Current code facts (grounded)
+## 1. Day-1 pre-build code facts (grounded)
 
 - `OAuthProviderType { GOOGLE, MICROSOFT, CUSTOM }`. Microsoft has connect/token URLs + scope
   (`MICROSOFT_AUTH_URL_TEMPLATE`, `MICROSOFT_TOKEN_URL_TEMPLATE`, `MICROSOFT_SCOPE_DEFAULT` = `outlook.office.com` IMAP).

@@ -2,6 +2,10 @@
 
 Date: 2026-05-24
 
+> **Superseded 2026-06-25:** `docs/DEVELOPMENT_MS_OAUTH_REVOKE_TASKBOOK_20260625.md`
+> ratified Microsoft **LOCAL-CLEAR** revoke semantics. This brief remains historical
+> discovery context and must not be used as current implementation guidance.
+
 ## Headline
 
 **The existing codebase already implements the position recommended by the design doc** `docs/OAUTH_CREDENTIAL_PROVIDER_REVOKE_MICROSOFT_CUSTOM_DESIGN_FOLLOWUP_20260507.md` §52-57 — Microsoft is intentionally unsupported and the limitation is surfaced honestly through capability metadata at both the dynamic service-layer decision and the static inventory-projection decision. No code change is required to satisfy the design doc.

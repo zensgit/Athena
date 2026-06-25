@@ -5,6 +5,7 @@ import com.ecm.core.integration.oauth.OAuthCredentialInventoryItem;
 import com.ecm.core.integration.oauth.OAuthCredentialRevokeEndpointDetails;
 import com.ecm.core.integration.oauth.OAuthReauthRequiredException;
 import com.ecm.core.integration.oauth.OAuthProviderType;
+import com.ecm.core.integration.oauth.OAuthRevokeCapabilityMode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -149,6 +150,7 @@ class OAuthCredentialAdminControllerSecurityTest {
             // off these two fields instead of hard-coding `provider === 'GOOGLE'`.
             .andExpect(jsonPath("$[0].providerRevokeSupported", is(true)))
             .andExpect(jsonPath("$[0].providerRevokeUnsupportedReason").doesNotExist())
+            .andExpect(jsonPath("$[0].providerRevokeMode", is("PROVIDER_REVOKE")))
             .andExpect(jsonPath("$[0].accessToken").doesNotExist())
             .andExpect(jsonPath("$[0].refreshToken").doesNotExist());
 
@@ -190,6 +192,7 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.accessTokenStored", is(false)))
             .andExpect(jsonPath("$.refreshTokenStored", is(false)))
             .andExpect(jsonPath("$.providerRevokeSupported", is(false)))
+            .andExpect(jsonPath("$.providerRevokeMode", is("UNSUPPORTED")))
             .andExpect(jsonPath(
                 "$.providerRevokeUnsupportedReason",
                 is("Provider-side revoke requires a locally stored OAuth token; "
@@ -236,6 +239,7 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.refreshTokenStored", is(true)))
             .andExpect(jsonPath("$.providerRevokeSupported", is(true)))
             .andExpect(jsonPath("$.providerRevokeUnsupportedReason").doesNotExist())
+            .andExpect(jsonPath("$.providerRevokeMode", is("PROVIDER_REVOKE")))
             .andExpect(jsonPath("$.accessToken").doesNotExist())
             .andExpect(jsonPath("$.refreshToken").doesNotExist());
 
@@ -294,6 +298,7 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.accessTokenStored", is(false)))
             .andExpect(jsonPath("$.refreshTokenStored", is(false)))
             .andExpect(jsonPath("$.providerRevokeSupported", is(false)))
+            .andExpect(jsonPath("$.providerRevokeMode", is("UNSUPPORTED")))
             .andExpect(jsonPath(
                 "$.providerRevokeUnsupportedReason",
                 is("Provider-side revoke requires a locally stored OAuth token; "
@@ -307,18 +312,63 @@ class OAuthCredentialAdminControllerSecurityTest {
 
     @Test
     @WithMockUser(roles = "ADMIN")
+    @DisplayName("admin can local-clear Microsoft OAuth credential without token disclosure")
+    void adminCanLocalClearMicrosoftCredential() throws Exception {
+        UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        UUID ownerId = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(oauthCredentialAdminService.revokeProvider(credentialId)).thenReturn(
+            new OAuthCredentialInventoryItem(
+                credentialId,
+                "MAIL_ACCOUNT",
+                ownerId,
+                OAuthProviderType.MICROSOFT,
+                true,
+                false,
+                false,
+                true,
+                true,
+                false,
+                false,
+                false,
+                null,
+                LocalDateTime.parse("2026-05-01T09:00:00"),
+                LocalDateTime.parse("2026-05-07T10:00:00"),
+                false,
+                "No locally stored OAuth token to revoke",
+                OAuthRevokeCapabilityMode.UNSUPPORTED
+            )
+        );
+
+        mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/revoke", credentialId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is(credentialId.toString())))
+            .andExpect(jsonPath("$.provider", is("MICROSOFT")))
+            .andExpect(jsonPath("$.connected", is(false)))
+            .andExpect(jsonPath("$.accessTokenStored", is(false)))
+            .andExpect(jsonPath("$.refreshTokenStored", is(false)))
+            .andExpect(jsonPath("$.providerRevokeSupported", is(false)))
+            .andExpect(jsonPath("$.providerRevokeMode", is("UNSUPPORTED")))
+            .andExpect(jsonPath("$.providerRevokeUnsupportedReason", is("No locally stored OAuth token to revoke")))
+            .andExpect(jsonPath("$.accessToken").doesNotExist())
+            .andExpect(jsonPath("$.refreshToken").doesNotExist());
+
+        verify(oauthCredentialAdminService).revokeProvider(credentialId);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
     @DisplayName("revoke OAuth credential reports unsupported provider as 400")
     void revokeReportsUnsupportedProviderAs400() throws Exception {
         UUID credentialId = UUID.fromString("11111111-2222-3333-4444-555555555555");
         when(oauthCredentialAdminService.revokeProvider(credentialId)).thenThrow(
-            new IllegalArgumentException("Provider-side revoke is not yet supported for MICROSOFT")
+            new IllegalArgumentException("OAuth revoke is only supported for GOOGLE, MICROSOFT, or CUSTOM; this credential is null")
         );
 
         mockMvc.perform(post("/api/v1/admin/oauth-credentials/{credentialId}/revoke", credentialId))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath(
                 "$.message",
-                is("Provider-side revoke is not yet supported for MICROSOFT")
+                is("OAuth revoke is only supported for GOOGLE, MICROSOFT, or CUSTOM; this credential is null")
             ));
 
         verify(oauthCredentialAdminService).revokeProvider(credentialId);
@@ -430,6 +480,7 @@ class OAuthCredentialAdminControllerSecurityTest {
             .andExpect(jsonPath("$.revokeEndpointConfigured", is(true)))
             .andExpect(jsonPath("$.providerRevokeSupported", is(true)))
             .andExpect(jsonPath("$.providerRevokeUnsupportedReason").doesNotExist())
+            .andExpect(jsonPath("$.providerRevokeMode", is("PROVIDER_REVOKE")))
             .andExpect(jsonPath("$.accessToken").doesNotExist())
             .andExpect(jsonPath("$.refreshToken").doesNotExist());
 

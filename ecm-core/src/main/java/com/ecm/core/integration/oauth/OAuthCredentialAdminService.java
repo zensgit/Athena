@@ -110,26 +110,32 @@ public class OAuthCredentialAdminService {
     }
 
     private static OAuthProviderRevokeCapability staticCapability(OAuthCredentialInventoryItem item) {
-        boolean supported;
-        String reason;
         if (item.provider() == null) {
-            supported = false;
-            reason = "Provider-side revoke is only supported for GOOGLE or CUSTOM; this credential is null";
-        } else if (item.provider() == OAuthProviderType.MICROSOFT) {
-            supported = false;
-            reason = "Provider-side revoke is not yet supported for MICROSOFT";
-        } else if (item.accessTokenStored() || item.refreshTokenStored()) {
-            supported = item.provider() == OAuthProviderType.GOOGLE;
-            reason = supported ? null : "Provider-side revoke endpoint is not configured for this CUSTOM credential";
-        } else if (item.credentialKeyConfigured()) {
-            supported = false;
-            reason = "Provider-side revoke requires a locally stored OAuth token; "
-                + "this credential row only references env-managed secrets";
-        } else {
-            supported = false;
-            reason = "No locally stored OAuth token to revoke";
+            return new OAuthProviderRevokeCapability(
+                false,
+                "OAuth revoke is only supported for GOOGLE, MICROSOFT, or CUSTOM; this credential is null"
+            );
         }
-        return new OAuthProviderRevokeCapability(supported, reason);
+        if (item.credentialKeyConfigured() && !item.accessTokenStored() && !item.refreshTokenStored()) {
+            return new OAuthProviderRevokeCapability(
+                false,
+                "Provider-side revoke requires a locally stored OAuth token; "
+                    + "this credential row only references env-managed secrets"
+            );
+        }
+        if (!item.accessTokenStored() && !item.refreshTokenStored()) {
+            return new OAuthProviderRevokeCapability(false, "No locally stored OAuth token to revoke");
+        }
+        if (item.provider() == OAuthProviderType.MICROSOFT) {
+            return new OAuthProviderRevokeCapability(true, null, OAuthRevokeCapabilityMode.LOCAL_CLEAR);
+        }
+        if (item.provider() == OAuthProviderType.GOOGLE) {
+            return new OAuthProviderRevokeCapability(true, null);
+        }
+        return new OAuthProviderRevokeCapability(
+            false,
+            "Provider-side revoke endpoint is not configured for this CUSTOM credential"
+        );
     }
 
     private static OAuthCredentialInventoryItem withCapability(
@@ -153,7 +159,8 @@ public class OAuthCredentialAdminService {
             item.createdAt(),
             item.updatedAt(),
             capability.supported(),
-            capability.unsupportedReason()
+            capability.unsupportedReason(),
+            capability.mode()
         );
     }
 

@@ -62,9 +62,10 @@ public class OAuthCredentialAdminController {
 
     @PostMapping("/{credentialId}/revoke")
     @Operation(
-        summary = "Revoke OAuth credential at provider",
-        description = "Calls the provider's revoke endpoint. GOOGLE is built in; CUSTOM requires a configured revoke "
-            + "endpoint. On success or already-invalid-token "
+        summary = "Revoke or locally clear OAuth credential",
+        description = "Calls the provider's revoke endpoint for GOOGLE and configured CUSTOM credentials. "
+            + "MICROSOFT performs a local token clear only because Entra has no per-token revoke endpoint. "
+            + "On success or already-invalid-token "
             + "responses, clears local tokens and returns the redacted inventory row. On 5xx or network failure, "
             + "preserves local tokens and surfaces a diagnostic error."
     )
