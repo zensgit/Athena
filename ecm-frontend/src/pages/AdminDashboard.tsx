@@ -71,6 +71,7 @@ import {
 import { format } from 'date-fns';
 import apiService from '../services/api';
 import ScheduledJobsCard from '../components/admin/ScheduledJobsCard';
+import QueueBacklogCard from '../components/admin/QueueBacklogCard';
 import { toast } from 'react-toastify';
 import userGroupService, { Group } from 'services/userGroupService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
@@ -2567,6 +2568,10 @@ const AdminDashboard: React.FC = () => {
 
         <Box mb={3}>
           <ScheduledJobsCard />
+        </Box>
+
+        <Box mb={3}>
+          <QueueBacklogCard />
         </Box>
 
         <Paper sx={{ p: 2, mb: 3 }}>
