@@ -70,6 +70,7 @@ import {
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import apiService from '../services/api';
+import ScheduledJobsCard from '../components/admin/ScheduledJobsCard';
 import { toast } from 'react-toastify';
 import userGroupService, { Group } from 'services/userGroupService';
 import savedSearchService, { SavedSearch } from 'services/savedSearchService';
@@ -2563,6 +2564,10 @@ const AdminDashboard: React.FC = () => {
             />
           </Grid>
         </Grid>
+
+        <Box mb={3}>
+          <ScheduledJobsCard />
+        </Box>
 
         <Paper sx={{ p: 2, mb: 3 }}>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
