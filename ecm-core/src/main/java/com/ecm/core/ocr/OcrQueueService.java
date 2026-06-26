@@ -464,6 +464,39 @@ public class OcrQueueService {
         );
     }
 
+    /**
+     * Read-only backlog snapshot for queue-backlog observability (§5A: cheap reads only).
+     * Redis backend → {@code scheduledCount()} (ZCARD, O(1)) + {@code peek(1)} for the oldest item's age
+     * past its scheduled time; in-memory backend → the queued-jobs size (oldest age not tracked).
+     * Never throws — a Redis failure reports {@code available=false}. Does NOT touch OCR failed/running
+     * (those would require an unindexed {@code Document.metadata} scan, deliberately deferred).
+     */
+    public OcrBacklogSnapshot getBacklogSnapshot() {
+        try {
+            if (useRedisBackend()) {
+                RedisScheduledQueueStore store = redisStore();
+                long depth = store.scheduledCount();
+                Long oldestPendingAgeSeconds = null;
+                List<RedisScheduledQueueStore.Entry> head = store.peek(1);
+                if (!head.isEmpty() && head.get(0) != null && head.get(0).nextAttemptAt() != null) {
+                    long ageMs = Instant.now().toEpochMilli() - head.get(0).nextAttemptAt().toEpochMilli();
+                    oldestPendingAgeSeconds = Math.max(0L, ageMs / 1000L);
+                }
+                return new OcrBacklogSnapshot(true, depth, oldestPendingAgeSeconds);
+            }
+            return new OcrBacklogSnapshot(true, queuedJobs.size(), null);
+        } catch (RuntimeException ex) {
+            return new OcrBacklogSnapshot(false, 0L, null);
+        }
+    }
+
+    public record OcrBacklogSnapshot(
+        boolean available,
+        long pendingDepth,
+        Long oldestPendingAgeSeconds
+    ) {
+    }
+
     public record OcrQueueStatus(
         UUID documentId,
         String ocrStatus,
