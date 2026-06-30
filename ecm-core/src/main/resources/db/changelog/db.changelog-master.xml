@@ -106,6 +106,7 @@
     <include file="db/changelog/changes/093-add-oauth-credential-revoke-endpoint.xml"/>
     <include file="db/changelog/changes/094-add-legal-hold-release-reason.xml"/>
     <include file="db/changelog/changes/095-add-document-ocr-status.xml"/>
+    <include file="db/changelog/changes/096-add-mail-processed-status-index.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

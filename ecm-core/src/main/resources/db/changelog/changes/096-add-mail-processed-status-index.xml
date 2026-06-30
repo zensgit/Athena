@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="096-add-mail-processed-status-index" author="failure-inventory-mail">
+        <comment>
+            Failure Inventory #4 (Option A): index mail_processed_messages.status so the inventory can
+            count per-message ERROR rows index-first (O(index) via idx_mail_processed_status) instead of an
+            O(n) scan. status already exists (migration 014, enum PROCESSED|ERROR) but is unindexed; only
+            (account_id, folder, uid) unique + (account_id) are indexed today. Count only — no subject /
+            error_message is read by the inventory (those stay in the ADMIN-gated mail diagnostics surface).
+            The shared 90d retention purge (MailProcessedRetentionService) keeps the ERROR count bounded.
+        </comment>
+
+        <createIndex indexName="idx_mail_processed_status" tableName="mail_processed_messages">
+            <column name="status"/>
+        </createIndex>
+
+        <rollback>
+            <dropIndex indexName="idx_mail_processed_status" tableName="mail_processed_messages"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

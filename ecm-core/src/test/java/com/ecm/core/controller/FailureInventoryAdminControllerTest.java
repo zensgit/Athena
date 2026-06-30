@@ -47,7 +47,8 @@ class FailureInventoryAdminControllerTest {
                 true, 5L, Map.of("TIMEOUT", 3L, "UNKNOWN", 2L), Instant.parse("2026-06-29T12:00:00Z")),
             new FailureInventorySummaryDto.TransferFailures(true, 4L),
             new FailureInventorySummaryDto.MailFetchErrors(true, 2L),
-            new FailureInventorySummaryDto.OcrFailures(true, 6L, 1L)));
+            new FailureInventorySummaryDto.OcrFailures(true, 6L, 1L),
+            new FailureInventorySummaryDto.MailProcessedErrors(true, 9L)));
 
         mockMvc.perform(get("/api/v1/admin/failure-inventory"))
             .andExpect(status().isOk())
@@ -62,6 +63,8 @@ class FailureInventoryAdminControllerTest {
             .andExpect(jsonPath("$.mail.errorAccountCount").value(2))
             .andExpect(jsonPath("$.ocr.available").value(true))
             .andExpect(jsonPath("$.ocr.failedCount").value(6))
-            .andExpect(jsonPath("$.ocr.runningCount").value(1));
+            .andExpect(jsonPath("$.ocr.runningCount").value(1))
+            .andExpect(jsonPath("$.mailProcessed.available").value(true))
+            .andExpect(jsonPath("$.mailProcessed.errorCount").value(9));
     }
 }

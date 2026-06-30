@@ -66,7 +66,8 @@ class FailureInventoryAdminControllerSecurityTest {
             new FailureInventorySummaryDto.PreviewDeadLetter(true, 0L, Map.of(), null),
             new FailureInventorySummaryDto.TransferFailures(true, 0L),
             new FailureInventorySummaryDto.MailFetchErrors(true, 0L),
-            new FailureInventorySummaryDto.OcrFailures(true, 0L, 0L));
+            new FailureInventorySummaryDto.OcrFailures(true, 0L, 0L),
+            new FailureInventorySummaryDto.MailProcessedErrors(true, 0L));
     }
 
     @Test

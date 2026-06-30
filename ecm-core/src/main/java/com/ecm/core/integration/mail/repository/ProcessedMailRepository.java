@@ -23,6 +23,14 @@ public interface ProcessedMailRepository extends JpaRepository<ProcessedMail, UU
 
     void deleteByProcessedAtBefore(java.time.LocalDateTime threshold);
 
+    /**
+     * Index-first count of processed-mail rows in a given terminal state, e.g. {@code ERROR} for the
+     * Failure Inventory per-message ERROR backlog (taskbook #4, Option A — count only). Backed by
+     * {@code idx_mail_processed_status} — an index scan, NOT a full {@code mail_processed_messages} scan.
+     * The shared 90d retention purge ({@code MailProcessedRetentionService}) keeps this count bounded.
+     */
+    long countByStatus(ProcessedMail.Status status);
+
     @Query(
         value = """
             SELECT account_id as accountId,
