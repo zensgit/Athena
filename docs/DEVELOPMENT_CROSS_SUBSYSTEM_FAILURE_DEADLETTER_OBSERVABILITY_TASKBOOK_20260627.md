@@ -1,5 +1,13 @@
 # Cross-Subsystem Failure / Dead-letter Observability — Day-1 Taskbook / Gap Audit
 
+> **Update (2026-06-29):** the first-cut shipped (#48 / verified #49), and the **OCR failed/running**
+> signal this doc deferred in §1.6/§2/§7 is now **shipped via #52** as **Option A** — a dedicated,
+> indexed `documents.ocr_status` column (not a `nodes.metadata` jsonb index), count-only on the
+> Failure Inventory card. The §1.6/§2/§7 "OCR → defer (unindexed)" lines below are a 2026-06-27
+> point-in-time view, now superseded for OCR. The remaining decision-gated items **#2 (async control
+> plane), #4 (Mail ProcessedMail ERROR), #5 (licensing)** are tracked, with code-grounded options,
+> in `DEVELOPMENT_FAILURE_INVENTORY_BACKLOG_2_5_DECISION_TASKBOOK_20260629.md`.
+
 - Date: 2026-06-27
 - Status: **Day-1 gap audit + taskbook. NOT YET RATIFIED** — §7 boxes are open; the owner's scope / boundaries / "not-now" list (already given) constrain it, but the formal stamp is the owner's.
 - Line: A read-only **cross-subsystem failure / dead-letter inventory** for the *content-processing* failures left after queue-backlog + scheduler-run.

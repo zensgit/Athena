@@ -55,7 +55,7 @@ each leg a separate merged PR with CI green.
 |---|---|---|---|---|---|
 | 1 | Cross-subsystem failure **first-cut** (taskbook §4: preview dead-letter count + failure-triage hub, reusing `QueueBacklogObservabilityService`) | ratified-pending / **not built** | **Yes** — backend (service + read-only endpoint + tests) ∥ frontend (card + tests) ∥ the preview dead-letter count accessor | **No** | Gated by **three** owner-side blocks (see §4): #46 unmerged, §7 unratified, explicit "hold" |
 | 2 | Async **control plane** (requeue/cancel/retry across subsystems) | deferred-not-ready (§8) | independent | **No** | Heavy product semantics; explicitly "not now" |
-| 3 | OCR **failed/running** index (a `Document.metadata` btree/expression index) | deferred-not-ready (§8) | independent | **No** | Needs a `Document.metadata` index-strategy decision first |
+| 3 | OCR **failed/running** index | **SHIPPED 2026-06-29 via #52 (Option A)** | independent | done | Index-strategy decided = dedicated indexed `documents.ocr_status` column (not a `nodes.metadata` jsonb index); count-only on the Failure Inventory card |
 | 4 | Mail **ProcessedMail error backlog** (indexed ERROR inventory) | deferred-not-ready (§8) | independent | **No** | Needs `ProcessedMail` index + retention + PII-display decisions first |
 | 5 | **Real licensing** (commercial entitlement) | deferred-not-ready (§8) | independent | **No** | Commercial product line, not a small closed loop |
 | 6 | Code-level unfinished work (TODO/FIXME/disabled tests) | **none found** | — | — | Zero markers across backend + frontend |
