@@ -12,6 +12,11 @@ This doc stays as the **decision record**. Ratified outcome:
 - **Next mainline = Sensitive-Data Logging Audit Phase 1** (genuinely live + high-value).
 - Minimal honest loop = a **doc-only PR** (this gap audit + the `FEATURE_LICENSING.md` correction); after merge, open the logging-audit taskbook. (= §4 path "(C)" plus the existing-doc fix in §2.4.)
 
+**2026-06-29 follow-up closeout:** the most misleading runtime behavior from §2.1 has been removed.
+Configured commercial license keys no longer fabricate a hardcoded Enterprise license; until real signed
+license verification exists, they fall back to Community with `valid=false`. The subsystem remains
+display-only and non-enforcing.
+
 ## 1. What exists today (precise, code-grounded)
 
 - Backend `LicenseService` + `LicenseController` (`GET /api/v1/system/license`, `hasRole('ADMIN')`).
@@ -23,10 +28,11 @@ This doc stays as the **decision record**. Ratified outcome:
 
 Three code-confirmed facts:
 
-1. **Validation is mocked.** `validateLicense()` (L56-84) is explicitly "MVP/Demo… Placeholder logic":
-   any non-blank/non-`"invalid"` key → **hardcoded Enterprise** (100 users / 1000 GB / +1yr / [WORKFLOW,OCR,AUDIT]);
-   empty → Community; `"invalid"` → Community fallback. No JWT/RSA parsing (imports present, unused).
-   **`valid` is always `true`** on every path — the Valid/Invalid chip is decorative.
+1. **Validation is placeholder-only.** Original audit finding: `validateLicense()` treated any
+   non-blank/non-`"invalid"` key as **hardcoded Enterprise** (100 users / 1000 GB / +1yr /
+   [WORKFLOW,OCR,AUDIT]), with `valid=true` on every path. **2026-06-29 closeout:** that false-grant path
+   is removed. Empty key → Community `valid=true`; configured key without real verification → Community
+   `valid=false`. Real JWT/RSA verification is still not implemented.
 2. **Enforcement is DEAD CODE.** Both enforcement methods have **ZERO callers in the whole repo**:
    - `isFeatureEnabled(feature)` — defined (L89), never called → **no feature is license-gated**;
    - `checkUserLimit()` — defined (L104), never called → **the `maxUsers` limit enforces nothing**.

@@ -2,7 +2,9 @@
 
 > **版本**: 1.1
 > **日期**: 2025-12-10（2026-06-23 状态纠偏）
-> **状态**: ⚠️ **Placeholder / 占位实现** —— 校验逻辑为 mock（硬编码），限制执行（`checkUserLimit` / `isFeatureEnabled`）**未接入、为死代码（NOT enforced yet）**。read-only 复核见 `docs/GAP_AUDIT_LICENSE_ENTITLEMENT_ADMIN_20260623.md`。
+> **状态**: ⚠️ **Placeholder / 占位实现** —— 商业 License 真验签尚未实现；当前不会因任意
+> `ecm.license.key` 授予 Enterprise。限制执行（`checkUserLimit` / `isFeatureEnabled`）**未接入、为死代码（NOT enforced yet）**。
+> read-only 复核见 `docs/GAP_AUDIT_LICENSE_ENTITLEMENT_ADMIN_20260623.md`。
 
 ## 1. 概述
 
@@ -13,9 +15,11 @@
 ### 2.1 License Service (`LicenseService`)
 
 *   **启动检查**: 系统启动时读取 `ecm.license.key`。
-*   **验证逻辑（⚠️ mock，非真验签）**:
+*   **验证逻辑（⚠️ 非真验签，商业授权未启用）**:
     *   没有 Key → 降级为 **Community Edition**（5 用户 / 10GB / 永不过期 / `[BASIC]`）。
-    *   有 Key → **当前并不真正解析或验签**：任何非空且非 `"invalid"` 的 Key 一律硬编码为 **Enterprise**（100 用户 / 1000GB / +1 年 / `[WORKFLOW,OCR,AUDIT]`）；`"invalid"` 或异常一律回退 Community。代码导入了 JWT/RSA 却未使用。`valid` 对外**恒为 `true`**。
+    *   有 Key → **当前并不真正解析或验签，也不授予商业 Edition**：任意配置的 Key 都会被忽略并降级为
+        **Community Edition**；`valid=false` 表示“配置了未被验证的商业 Key”。这避免旧占位逻辑把任意非空 Key
+        硬编码展示成 Enterprise。
 *   **限制执行（⚠️ 当前未接入 / NOT ENFORCED YET —— 死代码）**:
     *   `checkUserLimit()`: 已定义，但**全仓无生产调用者**——用户上限当前并不执行。
     *   `isFeatureEnabled(feature)`: 已定义，但**全仓无生产调用者**——没有任何功能受 License 开关控制；feature 名仅为 `LicenseService` 内的字符串字面量，无枚举 / 注册表。
@@ -30,7 +34,8 @@
 ## 3. 验证方法（当前行为）
 
 1.  **默认状态**: 不配置 License Key → 接口返回 "Community"、`maxUsers=5`。
-2.  **配置 License**: 设置任意非空且非 `invalid` 的 `ECM_LICENSE_KEY`（如 `valid`）→ 接口返回硬编码的 "Enterprise" 信息。**注意：这是 mock 数据，限制并未真正执行**（见 §2.1）。
+2.  **配置 License**: 设置任意非空 `ECM_LICENSE_KEY`（如 `valid`）→ 接口仍返回 "Community" 限制，并返回
+    `valid=false`，表示商业 Key 未被真实验签；不会展示硬编码 Enterprise。
 
 ## 4. 后续计划（若 licensing 成为真需求）
 
