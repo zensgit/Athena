@@ -7,6 +7,15 @@
 > (which covered only #3/#4) by (a) recording that **#3 has since been built** and (b) adding #2 and #5.
 > Operator priority: **#3 (ratify) → #4 → #2 → #5.** Findings are code-grounded (real file refs); an
 > investigation fan-out over the live tree produced them.
+>
+> **STATUS — all four decisions resolved (2026-06-30). This is now a decision RECORD, not a
+> pending-engineering queue:**
+> - **#3** — SHIPPED via #52 (Option A, dedicated indexed `documents.ocr_status`).
+> - **#4** — SHIPPED via #54 (Option A, count-only per-message ERROR + `idx_mail_processed_status`).
+> - **#2** — **decision resolved: observe-only / no build.** No unified control plane; use the existing
+>   per-domain ADMIN-gated/audited entry points.
+> - **#5** — **axes ratified (owner); the first slice is owned by a separate development line, not this
+>   Athena backlog line.** Later enforcement / signed-verifier slices remain owner / axis-gated.
 
 ## 0. What changed since the #3/#4 taskbook — the material findings
 
@@ -120,6 +129,12 @@ the shared 90d retention (recommended), or a distinct window? (3) 4b index = pla
 
 ## 3. #2 — Async control plane — **observe-only vs allow operations**
 
+> **DECISION RESOLVED (2026-06-30): observe-only / no build.** No unified control plane is built; the
+> per-domain ADMIN-gated, audited entry points stay the way operators act. Rationale below stands: a unified
+> surface would fold non-idempotent transfer retry and the missing OCR control plane into dangerous buttons.
+> The only ever-permissible minimal op (Option B: one idempotent preview dead-letter retry delegating to the
+> existing replay path) is **not** authorized — build nothing unless explicitly reopened.
+
 **State / key finding:** the inventory is read-only by design, but the **mutations already exist** per-domain,
 ADMIN-gated and **audited**: preview (`PreviewQueueService.enqueue/cancel` + `PreviewDiagnosticsController` /
 `OpsRecoveryController` replay/clear by filter, dry-run, history), transfer
@@ -152,6 +167,14 @@ non-ADMIN `DocumentController` ones)?
 ---
 
 ## 4. #5 — Real licensing (commercial entitlement) — **sequence LAST; set 4 axes first**
+
+> **DECISION RESOLVED (2026-06-30): axes ratified; first slice owned by a separate development line.**
+> Ratified axes — **A** edition + seats; **B** observe-and-warn first (no first-cut hard-block); **C** signed
+> offline license file (config = dev/test fallback only); **D** grace + soft-degrade, missing license shows an
+> explicit *unlicensed/Community* (never silent Enterprise). **First slice = read-only current-edition readout
+> + retire the silent-Enterprise false grant, no hard enforcement** — and that first slice is being delivered
+> by a **separate line, not this Athena backlog line** (a duplicate started here was retracted). Later
+> enforcement / signed-verifier / seat-cap slices remain owner- and axis-gated.
 
 **State:** a **mock stub** exists and is mostly **dead/unsafe**: `LicenseService.validateLicense()`
 fabricates **Enterprise** for any key ≠ `"invalid"` (the RSA/JWT imports are present but never called — a
@@ -189,15 +212,16 @@ immediately as a standalone fix?
 
 ## 5. Recommended decision order & slice readiness
 
-| # | Item | Gating decision(s) | Recommendation | Slice state |
+| # | Item | Gating decision(s) | Decision | Status |
 |---|---|---|---|---|
-| 3 | OCR index | index口径 (already answered = A) | **RATIFY #52** | **built, CI-green — merge** |
-| 4 | Mail ERROR | 4a PII/retention → 4b index | **A: count-only + plain status index** | ready to cut once 4a set (1 PR) |
-| 2 | Async control plane | observe-only vs operate | **A: stay observe-only** (B if any op) | A = no code; B = 1 small PR |
-| 5 | Licensing | axes A–D | **sequence last**; honest readout first | no slice until axes set |
+| 3 | OCR index | index口径 → A | RATIFIED A | **SHIPPED — #52** |
+| 4 | Mail ERROR | 4a PII/retention → 4b index | A: count-only + plain status index | **SHIPPED — #54** |
+| 2 | Async control plane | observe-only vs operate | **observe-only / no build** | **resolved — no engineering** |
+| 5 | Licensing | axes A–D | axes ratified (edition+seats / observe-and-warn / signed offline file / grace+soft-degrade) | **first slice owned by a separate line**; later slices owner/axis-gated |
 
-Each decided item yields a single clean, single-revert slice mirroring the §4 pattern (index-first count +
-PII-safe DTO + card + link-out). **No build proceeds without its DECISION.**
+All four backlog decisions are now resolved (see the STATUS banner at the top). This taskbook is a decision
+RECORD; nothing here is awaiting engineering on this line. Any future licensing work (enforcement / signed
+verifier / seat-cap) is a fresh, owner- and axis-gated slice.
 
 ## 6. Guardrails that hold across all items
 
