@@ -1,5 +1,11 @@
 # Development Plan — Completion & Verification Status (2026-06-27)
 
+> **Superseded (2026-06-29):** the one remaining buildable item — the **cross-subsystem failure first-cut** — is
+> no longer held. It was ratified (§7), built, CI-verified **7/7 green**, and merged as **#48 (`df7ec2c`)**, with the
+> authoritative closeout in **`DEV_AND_VERIFICATION_CROSS_SUBSYSTEM_FAILURE_INVENTORY_20260629.md` (#49)**. The body
+> below remains an accurate **2026-06-27 point-in-time snapshot** (it predates the operator's autonomous-development
+> mandate that lifted the "hold"); only the §8 decision-gated items (#2–#5) now remain.
+
 - Date: 2026-06-27
 - Scope: the Athena ECM observability / governance development cadence — completion status, unfinished-item
   inventory, and verification.
