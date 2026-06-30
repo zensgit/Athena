@@ -14,7 +14,8 @@ import java.util.UUID;
 @Entity
 @Table(name = "documents", indexes = {
     @Index(name = "idx_document_content_id", columnList = "content_id"),
-    @Index(name = "idx_document_mime_type", columnList = "mime_type")
+    @Index(name = "idx_document_mime_type", columnList = "mime_type"),
+    @Index(name = "idx_document_ocr_status", columnList = "ocr_status")
 })
 @DiscriminatorValue("DOCUMENT")
 @EqualsAndHashCode(callSuper = true, exclude = {"versions", "currentVersion"})
@@ -35,7 +36,16 @@ public class Document extends Node {
     
     @Column(name = "encoding")
     private String encoding;
-    
+
+    /**
+     * Indexed mirror of the OCR state otherwise stored in {@code metadata["ocrStatus"]}
+     * (READY|PROCESSING|FAILED). Written by {@code OcrQueueService} on every OCR transition so the
+     * Failure Inventory can count FAILED/PROCESSING documents index-first (idx_document_ocr_status)
+     * rather than scanning the jsonb metadata. Nullable: documents that never went through OCR stay null.
+     */
+    @Column(name = "ocr_status", length = 32)
+    private String ocrStatus;
+
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "current_version_id")
     private Version currentVersion;

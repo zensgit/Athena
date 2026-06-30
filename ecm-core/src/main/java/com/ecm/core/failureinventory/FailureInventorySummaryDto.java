@@ -29,7 +29,8 @@ import java.util.Map;
 public record FailureInventorySummaryDto(
     PreviewDeadLetter preview,
     TransferFailures transfer,
-    MailFetchErrors mail
+    MailFetchErrors mail,
+    OcrFailures ocr
 ) {
 
     /**
@@ -55,5 +56,17 @@ public record FailureInventorySummaryDto(
     public record MailFetchErrors(
         boolean available,
         long errorAccountCount
+    ) {}
+
+    /**
+     * OCR document-processing failures (taskbook #3, Option A) — index-first counts of documents stuck in
+     * {@code FAILED} / {@code PROCESSING}, read O(1) from {@code idx_document_ocr_status} (NOT a jsonb
+     * metadata scan). Count only — carries no document name, text, or failure reason (those stay in the
+     * deep OCR/document surfaces). {@code available=false} if the count source is unreachable.
+     */
+    public record OcrFailures(
+        boolean available,
+        long failedCount,
+        long runningCount
     ) {}
 }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="095-add-document-ocr-status" author="failure-inventory-ocr">
+        <comment>
+            Failure Inventory #3 (Option A): promote OCR state — today an UNINDEXED
+            nodes.metadata["ocrStatus"] jsonb key (READY|PROCESSING|FAILED) — to a dedicated,
+            indexed documents.ocr_status column, so the Failure Inventory can count FAILED/PROCESSING
+            OCR documents index-first (O(1) via idx_document_ocr_status) instead of an O(n) metadata
+            scan. OcrQueueService writes the column on every OCR transition; this backfills existing
+            rows once. Nullable — documents that never went through OCR stay null.
+        </comment>
+
+        <addColumn tableName="documents">
+            <column name="ocr_status" type="varchar(32)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+
+        <createIndex indexName="idx_document_ocr_status" tableName="documents">
+            <column name="ocr_status"/>
+        </createIndex>
+
+        <!-- One-time backfill from the existing jsonb metadata key. metadata lives on the JOINED parent
+             "nodes" table (documents.id = nodes.id), so join across. Postgres-only (metadata is jsonb);
+             on any other DBMS the column is populated going forward by OcrQueueService. -->
+        <sql dbms="postgresql">
+            UPDATE documents d SET ocr_status = n.metadata->>'ocrStatus'
+            FROM nodes n WHERE n.id = d.id AND n.metadata IS NOT NULL
+        </sql>
+
+        <rollback>
+            <dropIndex indexName="idx_document_ocr_status" tableName="documents"/>
+            <dropColumn tableName="documents" columnName="ocr_status"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

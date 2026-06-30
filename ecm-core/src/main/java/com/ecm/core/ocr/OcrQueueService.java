@@ -321,6 +321,7 @@ public class OcrQueueService {
 
         Map<String, Object> metadata = document.getMetadata();
         metadata.put(META_OCR_STATUS, "READY");
+        document.setOcrStatus("READY"); // indexed mirror for the Failure Inventory (idx_document_ocr_status)
         metadata.remove(META_OCR_FAILURE_REASON);
         metadata.put(META_OCR_LAST_UPDATED, Instant.now().toString());
         metadata.put(META_OCR_PROVIDER, "ml-service");
@@ -413,6 +414,7 @@ public class OcrQueueService {
         try {
             Map<String, Object> metadata = document.getMetadata();
             metadata.put(META_OCR_STATUS, status);
+            document.setOcrStatus(status); // indexed mirror for the Failure Inventory (idx_document_ocr_status)
             if (failureReason == null || failureReason.isBlank()) {
                 metadata.remove(META_OCR_FAILURE_REASON);
             } else {

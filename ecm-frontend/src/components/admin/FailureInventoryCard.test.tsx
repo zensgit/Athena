@@ -21,6 +21,7 @@ const summary: FailureInventorySummary = {
   },
   transfer: { available: true, failedCount: 4 },
   mail: { available: true, errorAccountCount: 2 },
+  ocr: { available: true, failedCount: 6, runningCount: 1 },
 };
 
 const renderCard = () =>
@@ -33,7 +34,7 @@ const renderCard = () =>
 describe('FailureInventoryCard', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('renders the three failure panels with data + a category tally chip', async () => {
+  it('renders the four failure panels with data + a category tally chip', async () => {
     mockedGet.mockResolvedValueOnce(summary);
 
     renderCard();
@@ -41,12 +42,41 @@ describe('FailureInventoryCard', () => {
     expect(await screen.findByText('Preview dead-letters')).toBeTruthy();
     expect(screen.getByText('Transfer replication')).toBeTruthy();
     expect(screen.getByText('Mail fetch')).toBeTruthy();
+    expect(screen.getByText('OCR processing')).toBeTruthy();
     // category tally chip (non-PII)
     expect(screen.getByText('TIMEOUT: 3')).toBeTruthy();
-    // links out to the deep surfaces
+    // links out to the deep surfaces (OCR has none — it shows a caption instead)
     expect(screen.getByText('Open preview diagnostics')).toBeTruthy();
     expect(screen.getByText('Open transfer jobs')).toBeTruthy();
     expect(screen.getByText('Open mail diagnostics')).toBeTruthy();
+    expect(screen.getByText(/Per-document OCR state/i)).toBeTruthy();
+  });
+
+  it('renders OCR FAILED + PROCESSING counts (no fake deep-surface link)', async () => {
+    mockedGet.mockResolvedValueOnce(summary);
+
+    renderCard();
+
+    expect(await screen.findByText('OCR processing')).toBeTruthy();
+    // count-only, index-first failed + processing values are surfaced
+    expect(screen.getByText(/Failed:/)).toBeTruthy();
+    expect(screen.getByText('6')).toBeTruthy();
+    // OCR intentionally has no "Open ..." deep-surface link
+    expect(screen.queryByText(/Open OCR/i)).toBeNull();
+  });
+
+  it('shows OCR unavailable in isolation without breaking peers', async () => {
+    mockedGet.mockResolvedValueOnce({
+      ...summary,
+      ocr: { available: false, failedCount: 0, runningCount: 0 },
+    });
+
+    renderCard();
+
+    expect(await screen.findByText('OCR processing')).toBeTruthy();
+    expect(screen.getByText('unavailable')).toBeTruthy();
+    // peers still render
+    expect(screen.getByText('Mail fetch')).toBeTruthy();
   });
 
   it('renders a per-subsystem "unavailable" note without breaking the other panels', async () => {
