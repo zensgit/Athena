@@ -22,6 +22,14 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     
     List<Document> findByMimeType(String mimeType);
 
+    /**
+     * Index-first count of non-deleted documents in a given OCR state, e.g. {@code FAILED} /
+     * {@code PROCESSING} for the Failure Inventory. Backed by {@code idx_document_ocr_status} — O(1)/index
+     * scan, NOT an O(n) jsonb metadata scan.
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.ocrStatus = :status AND d.deleted = false")
+    long countByOcrStatus(@Param("status") String status);
+
     Page<Document> findByDeletedFalse(Pageable pageable);
     
     Page<Document> findByMimeTypeIn(List<String> mimeTypes, Pageable pageable);

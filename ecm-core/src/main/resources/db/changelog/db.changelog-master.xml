@@ -105,6 +105,7 @@
     <include file="db/changelog/changes/092-add-site-invitation-send-tracking.xml"/>
     <include file="db/changelog/changes/093-add-oauth-credential-revoke-endpoint.xml"/>
     <include file="db/changelog/changes/094-add-legal-hold-release-reason.xml"/>
+    <include file="db/changelog/changes/095-add-document-ocr-status.xml"/>
     <include file="db/changelog/changes/007-insert-initial-data.xml"/>
 
 </databaseChangeLog>

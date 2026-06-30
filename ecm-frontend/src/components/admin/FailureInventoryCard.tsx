@@ -36,6 +36,11 @@ export interface FailureInventorySummary {
     available: boolean;
     errorAccountCount: number;
   };
+  ocr: {
+    available: boolean;
+    failedCount: number;
+    runningCount: number;
+  };
 }
 
 const fmtTime = (iso: string | null): string => (iso ? new Date(iso).toLocaleString() : '—');
@@ -89,7 +94,7 @@ const FailureInventoryCard: React.FC = () => {
           Failure Inventory
         </Typography>
         <Typography variant="body2" color="text.secondary" gutterBottom>
-          Read-only cross-subsystem failure triage (preview dead-letters · transfer failures · mail fetch errors).
+          Read-only cross-subsystem failure triage (preview dead-letters · transfer failures · mail fetch errors · OCR failures).
           Counts only — open the linked deep surface for detail. Observability only — no replay or retry.
         </Typography>
         {loading && (
@@ -147,6 +152,21 @@ const FailureInventoryCard: React.FC = () => {
               <Link component={RouterLink} to="/admin/mail" variant="body2">
                 Open mail diagnostics
               </Link>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2">OCR processing</Typography>
+              {data.ocr.available ? (
+                <Typography variant="body2" color="text.secondary">
+                  Failed: <b>{data.ocr.failedCount}</b> · Processing: <b>{data.ocr.runningCount}</b>
+                </Typography>
+              ) : (
+                <Unavailable />
+              )}
+              {/* OCR has no dedicated admin deep-surface; per-document OCR state lives on each document. */}
+              <Typography variant="caption" color="text.disabled" display="block">
+                Per-document OCR state is shown on each document.
+              </Typography>
             </Box>
           </Stack>
         )}

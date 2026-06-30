@@ -1,12 +1,14 @@
 package com.ecm.core.failureinventory;
 
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.MailFetchErrors;
+import com.ecm.core.failureinventory.FailureInventorySummaryDto.OcrFailures;
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.PreviewDeadLetter;
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.TransferFailures;
 import com.ecm.core.preview.PreviewDeadLetterRegistry;
 import com.ecm.core.preview.PreviewDeadLetterRegistry.DeadLetterEntry;
 import com.ecm.core.queuebacklog.QueueBacklogObservabilityService;
 import com.ecm.core.queuebacklog.QueueBacklogSummaryDto;
+import com.ecm.core.repository.DocumentRepository;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -18,11 +20,14 @@ import org.springframework.stereotype.Service;
 /**
  * Read-only cross-subsystem failure-inventory aggregator (taskbook §4 first-cut, §7 ratified).
  *
- * <p>Deliberately thin: the only NEW computation is the preview dead-letter count (+ a non-PII category
- * tally and the latest failure time) read O(1) from {@link PreviewDeadLetterRegistry}. Transfer FAILED and
- * mail account-level ERROR counts are <b>reused</b> from {@link QueueBacklogObservabilityService#getSummary()}
- * (called once; its per-source {@code available} flags are propagated) — this service never re-implements or
- * re-indexes those, and never reads {@code mail_processed_messages} or {@code nodes.metadata}.
+ * <p>Deliberately thin. Two NEW cheap computations: the preview dead-letter count (+ a non-PII category
+ * tally and the latest failure time) read O(1) from {@link PreviewDeadLetterRegistry}; and the OCR
+ * FAILED/PROCESSING document counts (taskbook #3, Option A) read index-first from {@code idx_document_ocr_status}
+ * via {@link DocumentRepository#countByOcrStatus(String)} — two O(1) index counts, NOT a {@code nodes.metadata}
+ * jsonb scan. Transfer FAILED and mail account-level ERROR counts are <b>reused</b> from
+ * {@link QueueBacklogObservabilityService#getSummary()} (called once; its per-source {@code available} flags are
+ * propagated) — this service never re-implements or re-indexes those, and never reads
+ * {@code mail_processed_messages}.
  *
  * <p>Every source is isolated: a failure of one source yields {@code available=false} for that source only
  * and never throws (§6 / §5A), keeping the AdminDashboard card stable.
@@ -33,15 +38,22 @@ public class FailureInventoryService {
     /** {@code list(int)} clamps to 1..500; this bounds the category-tally sample cheaply. */
     private static final int CATEGORY_SAMPLE_LIMIT = 500;
 
+    /** OCR states mirrored onto {@code documents.ocr_status} by {@code OcrQueueService}; only failures/in-flight are counted. */
+    private static final String OCR_STATUS_FAILED = "FAILED";
+    private static final String OCR_STATUS_PROCESSING = "PROCESSING";
+
     private final QueueBacklogObservabilityService queueBacklogObservabilityService;
     private final PreviewDeadLetterRegistry previewDeadLetterRegistry;
+    private final DocumentRepository documentRepository;
 
     public FailureInventoryService(
         QueueBacklogObservabilityService queueBacklogObservabilityService,
-        PreviewDeadLetterRegistry previewDeadLetterRegistry
+        PreviewDeadLetterRegistry previewDeadLetterRegistry,
+        DocumentRepository documentRepository
     ) {
         this.queueBacklogObservabilityService = queueBacklogObservabilityService;
         this.previewDeadLetterRegistry = previewDeadLetterRegistry;
+        this.documentRepository = documentRepository;
     }
 
     public FailureInventorySummaryDto getSummary() {
@@ -56,7 +68,8 @@ public class FailureInventoryService {
         return new FailureInventorySummaryDto(
             previewDeadLetter(),
             transferFailures(backlog),
-            mailFetchErrors(backlog)
+            mailFetchErrors(backlog),
+            ocrFailures()
         );
     }
 
@@ -94,5 +107,20 @@ public class FailureInventoryService {
             return new MailFetchErrors(false, 0L);
         }
         return new MailFetchErrors(true, backlog.mail().errors());
+    }
+
+    /**
+     * NEW signal (taskbook #3, Option A): OCR FAILED / PROCESSING document counts read index-first from
+     * {@code idx_document_ocr_status} (two O(1) counts, no jsonb metadata scan). Count only — no document
+     * name, text, or failure reason. Isolated: any failure yields {@code available=false} and never throws.
+     */
+    private OcrFailures ocrFailures() {
+        try {
+            long failed = documentRepository.countByOcrStatus(OCR_STATUS_FAILED);
+            long running = documentRepository.countByOcrStatus(OCR_STATUS_PROCESSING);
+            return new OcrFailures(true, failed, running);
+        } catch (RuntimeException ex) {
+            return new OcrFailures(false, 0L, 0L);
+        }
     }
 }
