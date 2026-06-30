@@ -2,6 +2,8 @@ package com.ecm.core.failureinventory;
 
 import com.ecm.core.preview.PreviewDeadLetterRegistry;
 import com.ecm.core.preview.PreviewDeadLetterRegistry.DeadLetterEntry;
+import com.ecm.core.integration.mail.model.ProcessedMail;
+import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.queuebacklog.QueueBacklogObservabilityService;
 import com.ecm.core.queuebacklog.QueueBacklogSummaryDto;
 import com.ecm.core.repository.DocumentRepository;
@@ -26,9 +28,10 @@ class FailureInventoryServiceTest {
     private final QueueBacklogObservabilityService queueBacklog = mock(QueueBacklogObservabilityService.class);
     private final PreviewDeadLetterRegistry previewDeadLetterRegistry = mock(PreviewDeadLetterRegistry.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
+    private final ProcessedMailRepository processedMailRepository = mock(ProcessedMailRepository.class);
 
     private final FailureInventoryService service =
-        new FailureInventoryService(queueBacklog, previewDeadLetterRegistry, documentRepository);
+        new FailureInventoryService(queueBacklog, previewDeadLetterRegistry, documentRepository, processedMailRepository);
 
     private static DeadLetterEntry entry(String category, Instant failedAt) {
         // The entry CARRIES raw `reason` text — the service must never let it reach the DTO.
@@ -57,6 +60,7 @@ class FailureInventoryServiceTest {
             entry("TIMEOUT", t1), entry("TIMEOUT", t2), entry("UNKNOWN", t3)));
         when(documentRepository.countByOcrStatus("FAILED")).thenReturn(5L);
         when(documentRepository.countByOcrStatus("PROCESSING")).thenReturn(2L);
+        when(processedMailRepository.countByStatus(ProcessedMail.Status.ERROR)).thenReturn(9L);
 
         FailureInventorySummaryDto dto = service.getSummary();
 
@@ -69,6 +73,9 @@ class FailureInventoryServiceTest {
         assertThat(dto.ocr().available()).isTrue();
         assertThat(dto.ocr().failedCount()).isEqualTo(5L);
         assertThat(dto.ocr().runningCount()).isEqualTo(2L);
+        // NEW signal: mail per-message ERROR count (index-first, distinct axis from account-level)
+        assertThat(dto.mailProcessed().available()).isTrue();
+        assertThat(dto.mailProcessed().errorCount()).isEqualTo(9L);
         // REUSED counts
         assertThat(dto.transfer().available()).isTrue();
         assertThat(dto.transfer().failedCount()).isEqualTo(4L);
@@ -82,6 +89,7 @@ class FailureInventoryServiceTest {
         when(previewDeadLetterRegistry.getItemCount()).thenThrow(new RuntimeException("redis down"));
         when(queueBacklog.getSummary()).thenThrow(new RuntimeException("backlog down"));
         when(documentRepository.countByOcrStatus("FAILED")).thenThrow(new RuntimeException("db down"));
+        when(processedMailRepository.countByStatus(ProcessedMail.Status.ERROR)).thenThrow(new RuntimeException("db down"));
 
         FailureInventorySummaryDto dto = service.getSummary();
 
@@ -96,6 +104,8 @@ class FailureInventoryServiceTest {
         assertThat(dto.ocr().available()).isFalse();
         assertThat(dto.ocr().failedCount()).isZero();
         assertThat(dto.ocr().runningCount()).isZero();
+        assertThat(dto.mailProcessed().available()).isFalse();
+        assertThat(dto.mailProcessed().errorCount()).isZero();
     }
 
     @Test
@@ -153,23 +163,57 @@ class FailureInventoryServiceTest {
     }
 
     @Test
+    @DisplayName("mail per-message ERROR is read index-first via countByStatus(ERROR), count only")
+    void mailProcessedErrorIsIndexFirst() {
+        when(queueBacklog.getSummary()).thenReturn(backlog(true, 0L, 0L));
+        when(previewDeadLetterRegistry.getItemCount()).thenReturn(0);
+        when(previewDeadLetterRegistry.list(anyInt())).thenReturn(List.of());
+        when(processedMailRepository.countByStatus(ProcessedMail.Status.ERROR)).thenReturn(11L);
+
+        FailureInventorySummaryDto dto = service.getSummary();
+
+        assertThat(dto.mailProcessed().available()).isTrue();
+        assertThat(dto.mailProcessed().errorCount()).isEqualTo(11L);
+        verify(processedMailRepository).countByStatus(ProcessedMail.Status.ERROR);
+        verifyNoMoreInteractions(processedMailRepository);
+    }
+
+    @Test
+    @DisplayName("a mail-processed DB failure isolates to mailProcessed.available=false; account-level mail stays healthy")
+    void mailProcessedSourceFailsClosedIndependently() {
+        when(queueBacklog.getSummary()).thenReturn(backlog(true, 4L, 2L));
+        when(previewDeadLetterRegistry.getItemCount()).thenReturn(0);
+        when(previewDeadLetterRegistry.list(anyInt())).thenReturn(List.of());
+        when(processedMailRepository.countByStatus(ProcessedMail.Status.ERROR)).thenThrow(new RuntimeException("db down"));
+
+        FailureInventorySummaryDto dto = service.getSummary();
+
+        assertThat(dto.mailProcessed().available()).isFalse();
+        assertThat(dto.mailProcessed().errorCount()).isZero();
+        // the account-level mail signal (distinct axis) is unaffected
+        assertThat(dto.mail().available()).isTrue();
+        assertThat(dto.mail().errorAccountCount()).isEqualTo(2L);
+    }
+
+    @Test
     @DisplayName("§5A PII guard: the DTO exposes ONLY count/timestamp/type/category — no raw failure text fields")
     void dtoExposesNoRawFailureText() {
         Set<String> forbidden = Set.of(
             "reason", "subject", "errorMessage", "transportMessage", "errorLog", "lastMessage", "entryReport");
         Set<String> allowed = Set.of(
             // top-level
-            "preview", "transfer", "mail", "ocr",
+            "preview", "transfer", "mail", "ocr", "mailProcessed",
             // sub-records
             "available", "deadLetterCount", "categoryTally", "latestFailedAt", "failedCount", "errorAccountCount",
-            "runningCount");
+            "runningCount", "errorCount");
 
         List<Class<?>> records = List.of(
             FailureInventorySummaryDto.class,
             FailureInventorySummaryDto.PreviewDeadLetter.class,
             FailureInventorySummaryDto.TransferFailures.class,
             FailureInventorySummaryDto.MailFetchErrors.class,
-            FailureInventorySummaryDto.OcrFailures.class);
+            FailureInventorySummaryDto.OcrFailures.class,
+            FailureInventorySummaryDto.MailProcessedErrors.class);
 
         for (Class<?> rec : records) {
             for (RecordComponent c : rec.getRecordComponents()) {

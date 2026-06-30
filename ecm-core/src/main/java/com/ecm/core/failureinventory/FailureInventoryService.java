@@ -1,9 +1,12 @@
 package com.ecm.core.failureinventory;
 
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.MailFetchErrors;
+import com.ecm.core.failureinventory.FailureInventorySummaryDto.MailProcessedErrors;
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.OcrFailures;
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.PreviewDeadLetter;
 import com.ecm.core.failureinventory.FailureInventorySummaryDto.TransferFailures;
+import com.ecm.core.integration.mail.model.ProcessedMail;
+import com.ecm.core.integration.mail.repository.ProcessedMailRepository;
 import com.ecm.core.preview.PreviewDeadLetterRegistry;
 import com.ecm.core.preview.PreviewDeadLetterRegistry.DeadLetterEntry;
 import com.ecm.core.queuebacklog.QueueBacklogObservabilityService;
@@ -20,14 +23,16 @@ import org.springframework.stereotype.Service;
 /**
  * Read-only cross-subsystem failure-inventory aggregator (taskbook §4 first-cut, §7 ratified).
  *
- * <p>Deliberately thin. Two NEW cheap computations: the preview dead-letter count (+ a non-PII category
- * tally and the latest failure time) read O(1) from {@link PreviewDeadLetterRegistry}; and the OCR
- * FAILED/PROCESSING document counts (taskbook #3, Option A) read index-first from {@code idx_document_ocr_status}
- * via {@link DocumentRepository#countByOcrStatus(String)} — two O(1) index counts, NOT a {@code nodes.metadata}
- * jsonb scan. Transfer FAILED and mail account-level ERROR counts are <b>reused</b> from
+ * <p>Deliberately thin. Three NEW cheap computations, each index-first: the preview dead-letter count (+ a
+ * non-PII category tally and the latest failure time) read O(1) from {@link PreviewDeadLetterRegistry}; the OCR
+ * FAILED/PROCESSING document counts (taskbook #3, Option A) via {@link DocumentRepository#countByOcrStatus(String)}
+ * ({@code idx_document_ocr_status}, NOT a {@code nodes.metadata} jsonb scan); and the mail per-message ERROR count
+ * (taskbook #4, Option A) via {@link ProcessedMailRepository#countByStatus} ({@code idx_mail_processed_status},
+ * NOT a full {@code mail_processed_messages} scan — count only, no {@code subject}/{@code error_message}). Transfer
+ * FAILED and mail <i>account-level</i> ERROR counts are <b>reused</b> from
  * {@link QueueBacklogObservabilityService#getSummary()} (called once; its per-source {@code available} flags are
- * propagated) — this service never re-implements or re-indexes those, and never reads
- * {@code mail_processed_messages}.
+ * propagated) — this service never re-implements or re-indexes those. Note the mail per-message ERROR count is a
+ * DIFFERENT axis from the reused account-level fetch-health count, not a duplicate.
  *
  * <p>Every source is isolated: a failure of one source yields {@code available=false} for that source only
  * and never throws (§6 / §5A), keeping the AdminDashboard card stable.
@@ -45,15 +50,18 @@ public class FailureInventoryService {
     private final QueueBacklogObservabilityService queueBacklogObservabilityService;
     private final PreviewDeadLetterRegistry previewDeadLetterRegistry;
     private final DocumentRepository documentRepository;
+    private final ProcessedMailRepository processedMailRepository;
 
     public FailureInventoryService(
         QueueBacklogObservabilityService queueBacklogObservabilityService,
         PreviewDeadLetterRegistry previewDeadLetterRegistry,
-        DocumentRepository documentRepository
+        DocumentRepository documentRepository,
+        ProcessedMailRepository processedMailRepository
     ) {
         this.queueBacklogObservabilityService = queueBacklogObservabilityService;
         this.previewDeadLetterRegistry = previewDeadLetterRegistry;
         this.documentRepository = documentRepository;
+        this.processedMailRepository = processedMailRepository;
     }
 
     public FailureInventorySummaryDto getSummary() {
@@ -69,7 +77,8 @@ public class FailureInventoryService {
             previewDeadLetter(),
             transferFailures(backlog),
             mailFetchErrors(backlog),
-            ocrFailures()
+            ocrFailures(),
+            mailProcessedErrors()
         );
     }
 
@@ -121,6 +130,22 @@ public class FailureInventoryService {
             return new OcrFailures(true, failed, running);
         } catch (RuntimeException ex) {
             return new OcrFailures(false, 0L, 0L);
+        }
+    }
+
+    /**
+     * NEW signal (taskbook #4, Option A): per-message mail ERROR count read index-first from
+     * {@code idx_mail_processed_status} via {@link ProcessedMailRepository#countByStatus} (O(index), no full
+     * {@code mail_processed_messages} scan). Count only — no {@code subject}/{@code error_message} (those stay
+     * in the ADMIN-gated mail diagnostics surface). A DIFFERENT axis from the reused account-level
+     * {@link MailFetchErrors}. Isolated: any failure yields {@code available=false} and never throws.
+     */
+    private MailProcessedErrors mailProcessedErrors() {
+        try {
+            long errorCount = processedMailRepository.countByStatus(ProcessedMail.Status.ERROR);
+            return new MailProcessedErrors(true, errorCount);
+        } catch (RuntimeException ex) {
+            return new MailProcessedErrors(false, 0L);
         }
     }
 }

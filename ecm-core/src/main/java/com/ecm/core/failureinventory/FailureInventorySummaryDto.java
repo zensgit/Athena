@@ -30,7 +30,8 @@ public record FailureInventorySummaryDto(
     PreviewDeadLetter preview,
     TransferFailures transfer,
     MailFetchErrors mail,
-    OcrFailures ocr
+    OcrFailures ocr,
+    MailProcessedErrors mailProcessed
 ) {
 
     /**
@@ -68,5 +69,18 @@ public record FailureInventorySummaryDto(
         boolean available,
         long failedCount,
         long runningCount
+    ) {}
+
+    /**
+     * Mail per-message ERROR backlog (taskbook #4, Option A) — an index-first count of
+     * {@code mail_processed_messages} rows in {@code ERROR}, read from {@code idx_mail_processed_status}
+     * (NOT a full-table scan). This is a DIFFERENT axis from {@link MailFetchErrors}: that is the
+     * account-level fetch-health count (an account can be fetch-healthy yet still have message-level
+     * processing errors). Count only — carries no {@code subject} or {@code error_message} (those stay in
+     * the ADMIN-gated mail diagnostics surface). {@code available=false} if the count source is unreachable.
+     */
+    public record MailProcessedErrors(
+        boolean available,
+        long errorCount
     ) {}
 }

@@ -41,6 +41,10 @@ export interface FailureInventorySummary {
     failedCount: number;
     runningCount: number;
   };
+  mailProcessed: {
+    available: boolean;
+    errorCount: number;
+  };
 }
 
 const fmtTime = (iso: string | null): string => (iso ? new Date(iso).toLocaleString() : '—');
@@ -94,7 +98,7 @@ const FailureInventoryCard: React.FC = () => {
           Failure Inventory
         </Typography>
         <Typography variant="body2" color="text.secondary" gutterBottom>
-          Read-only cross-subsystem failure triage (preview dead-letters · transfer failures · mail fetch errors · OCR failures).
+          Read-only cross-subsystem failure triage (preview dead-letters · transfer failures · mail fetch + message errors · OCR failures).
           Counts only — open the linked deep surface for detail. Observability only — no replay or retry.
         </Typography>
         {loading && (
@@ -141,10 +145,17 @@ const FailureInventoryCard: React.FC = () => {
             </Box>
 
             <Box>
-              <Typography variant="subtitle2">Mail fetch</Typography>
+              <Typography variant="subtitle2">Mail</Typography>
               {data.mail.available ? (
                 <Typography variant="body2" color="text.secondary">
-                  Accounts in error: <b>{data.mail.errorAccountCount}</b>
+                  Accounts in error (fetch): <b>{data.mail.errorAccountCount}</b>
+                </Typography>
+              ) : (
+                <Unavailable />
+              )}
+              {data.mailProcessed.available ? (
+                <Typography variant="body2" color="text.secondary">
+                  Messages failed (processing): <b>{data.mailProcessed.errorCount}</b>
                 </Typography>
               ) : (
                 <Unavailable />
