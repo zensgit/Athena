@@ -4,9 +4,14 @@
 > signal this doc deferred in §1.6/§2/§7 is now **shipped via #52** as **Option A** — a dedicated,
 > indexed `documents.ocr_status` column (not a `nodes.metadata` jsonb index), count-only on the
 > Failure Inventory card. The §1.6/§2/§7 "OCR → defer (unindexed)" lines below are a 2026-06-27
-> point-in-time view, now superseded for OCR. The remaining decision-gated items **#2 (async control
-> plane), #4 (Mail ProcessedMail ERROR), #5 (licensing)** are tracked, with code-grounded options,
-> in `DEVELOPMENT_FAILURE_INVENTORY_BACKLOG_2_5_DECISION_TASKBOOK_20260629.md`.
+> point-in-time view, now superseded for OCR.
+>
+> **Further update (2026-06-30):** the once-deferred items are now all resolved — **#4 Mail ProcessedMail
+> ERROR SHIPPED via #54** (count-only per-message ERROR + `idx_mail_processed_status`; the §2/§7 "ProcessedMail
+> → exclude (unindexed + PII)" lines below are superseded — it is now indexed + count-only, raw PII still links
+> out to `/integration/mail/diagnostics`); **#5 licensing first slice SHIPPED via #55**; **#2 async control
+> plane resolved as observe-only / no build.** Full decision record:
+> `DEVELOPMENT_FAILURE_INVENTORY_BACKLOG_2_5_DECISION_TASKBOOK_20260629.md`.
 
 - Date: 2026-06-27
 - Status: **Day-1 gap audit + taskbook. NOT YET RATIFIED** — §7 boxes are open; the owner's scope / boundaries / "not-now" list (already given) constrain it, but the formal stamp is the owner's.

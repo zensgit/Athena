@@ -1,5 +1,10 @@
 # Failure Inventory follow-ups — OCR & Mail-ERROR index + privacy DECISION taskbook
 
+> **SUPERSEDED (2026-06-30):** both items are decided and shipped — **#3 OCR via #52** (Option A) and
+> **#4 ProcessedMail ERROR via #54** (Option A, count-only + `idx_mail_processed_status`). This doc is kept as
+> the historical #3/#4 decision surface; the live, broader record (incl. #2 observe-only and #5 licensing) is
+> `DEVELOPMENT_FAILURE_INVENTORY_BACKLOG_2_5_DECISION_TASKBOOK_20260629.md`.
+
 > Date 2026-06-29 · **decision surface, NOT an implementation.** Narrow scope: turn the two
 > items the §4 first-cut (#48 / verified #49) deliberately left out — **#3 OCR failed/running**
 > and **#4 ProcessedMail ERROR** — into *buildable* slices by resolving the one or two gating

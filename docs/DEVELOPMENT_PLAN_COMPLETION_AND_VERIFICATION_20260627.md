@@ -4,7 +4,13 @@
 > no longer held. It was ratified (§7), built, CI-verified **7/7 green**, and merged as **#48 (`df7ec2c`)**, with the
 > authoritative closeout in **`DEV_AND_VERIFICATION_CROSS_SUBSYSTEM_FAILURE_INVENTORY_20260629.md` (#49)**. The body
 > below remains an accurate **2026-06-27 point-in-time snapshot** (it predates the operator's autonomous-development
-> mandate that lifted the "hold"); only the §8 decision-gated items (#2–#5) now remain.
+> mandate that lifted the "hold").
+>
+> **Further update (2026-06-30):** the §8 / §3 backlog items #2–#5 are now **all resolved — nothing in this
+> inventory awaits engineering:** #3 SHIPPED (#52), #4 SHIPPED (#54), #5 first slice SHIPPED (#55, read-only
+> edition readout + false-grant retirement; later enforcement/verifier slices owner/axis-gated), #2 resolved
+> as **observe-only / no build**. The §3 rows below are updated; other body sections stay as the historical
+> snapshot. Live status: `DEVELOPMENT_FAILURE_INVENTORY_BACKLOG_2_5_DECISION_TASKBOOK_20260629.md`.
 
 - Date: 2026-06-27
 - Scope: the Athena ECM observability / governance development cadence — completion status, unfinished-item
@@ -54,10 +60,10 @@ each leg a separate merged PR with CI green.
 | # | Item | Status | Parallelizable | Safe to build now | Why |
 |---|---|---|---|---|---|
 | 1 | Cross-subsystem failure **first-cut** (taskbook §4: preview dead-letter count + failure-triage hub, reusing `QueueBacklogObservabilityService`) | ratified-pending / **not built** | **Yes** — backend (service + read-only endpoint + tests) ∥ frontend (card + tests) ∥ the preview dead-letter count accessor | **No** | Gated by **three** owner-side blocks (see §4): #46 unmerged, §7 unratified, explicit "hold" |
-| 2 | Async **control plane** (requeue/cancel/retry across subsystems) | deferred-not-ready (§8) | independent | **No** | Heavy product semantics; explicitly "not now" |
+| 2 | Async **control plane** (requeue/cancel/retry across subsystems) | **RESOLVED 2026-06-30: observe-only / no build** | independent | n/a | Per-domain ADMIN-gated/audited ops stay; a unified surface would fold non-idempotent transfer retry + missing OCR control plane into dangerous buttons |
 | 3 | OCR **failed/running** index | **SHIPPED 2026-06-29 via #52 (Option A)** | independent | done | Index-strategy decided = dedicated indexed `documents.ocr_status` column (not a `nodes.metadata` jsonb index); count-only on the Failure Inventory card |
-| 4 | Mail **ProcessedMail error backlog** (indexed ERROR inventory) | deferred-not-ready (§8) | independent | **No** | Needs `ProcessedMail` index + retention + PII-display decisions first |
-| 5 | **Real licensing** (commercial entitlement) | deferred-not-ready (§8) | independent | **No** | Commercial product line, not a small closed loop |
+| 4 | Mail **ProcessedMail error backlog** (indexed ERROR inventory) | **SHIPPED 2026-06-30 via #54 (Option A)** | independent | done | Count-only per-message ERROR + `idx_mail_processed_status`; retention already existed (90d purge); raw detail stays in `/integration/mail/diagnostics` |
+| 5 | **Real licensing** (commercial entitlement) | **first slice SHIPPED 2026-06-30 via #55** | independent | first slice done | Axes ratified (edition+seats / observe-and-warn / signed offline file / grace+soft-degrade); first slice = read-only edition readout + false-grant retirement, no hard enforcement; later enforcement/verifier slices owner/axis-gated |
 | 6 | Code-level unfinished work (TODO/FIXME/disabled tests) | **none found** | — | — | Zero markers across backend + frontend |
 
 So the **only** genuinely buildable item is #1, and it is **owner-gated**, not engineer-gated. Items #2–#5 are
@@ -95,7 +101,8 @@ to start:
 - **Frontend** (parallel unit): an AdminDashboard "Failure Inventory / triage" card — per-source counts + `available`
   flag + **links out** to the deep surfaces (preview diagnostics, mail diagnostics, transfer jobs); failure-isolated
   fetch; render + isolation tests.
-- **OCR / ProcessedMail-ERROR**: remain excluded (unindexed / PII) → link out only.
+- **OCR / ProcessedMail-ERROR**: *(2026-06-30: both have since shipped as count-only, index-first signals — OCR
+  via #52 `documents.ocr_status`, mail via #54 `idx_mail_processed_status`; raw PII detail still links out.)*
 
 ## 6. Verification of this status (reproducible)
 
